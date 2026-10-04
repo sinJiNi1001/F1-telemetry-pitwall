@@ -1,8 +1,10 @@
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import duckdb
-from fastapi import FastAPI, HTTPException
+import fastf1
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 
@@ -12,8 +14,24 @@ from app.ingest import (
     _load_session,
     fetch_and_store_lap_telemetry,
 )
+from app.live import live_pipeline
 
-app = FastAPI(title="Pit Wall Analytics Hub")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    live_task = asyncio.create_task(live_pipeline.run())
+    try:
+        yield
+    finally:
+        live_pipeline.stop()
+        live_task.cancel()
+        try:
+            await live_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(title="Pit Wall Analytics Hub", lifespan=lifespan)
 
 # Allow Next.js (port 3000) to securely fetch from FastAPI (port 8000)
 app.add_middleware(
@@ -29,6 +47,27 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"message": "Pit Wall Analytics API is active. Head to /docs for endpoints."}
+
+
+@app.get("/live/status")
+def get_live_status():
+    return live_pipeline.status()
+
+
+@app.get("/live/snapshot")
+def get_live_snapshot():
+    return live_pipeline.snapshot()
+
+
+@app.websocket("/live/stream")
+async def stream_live_snapshot(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json(live_pipeline.snapshot())
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        return
 
 @app.get("/telemetry/{session_key}/{driver_number}/{lap_number}")
 async def get_lap_telemetry(session_key: int, driver_number: int, lap_number: int):
@@ -84,10 +123,21 @@ async def get_session_laps(session_key: int):
         session = await asyncio.to_thread(_load_session, session_key)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    lap_numbers = sorted(
-        int(lap_number)
-        for lap_number in session.laps["LapNumber"].dropna().unique()
-    )
+    try:
+        lap_numbers = sorted(
+            int(lap_number)
+            for lap_number in session.laps["LapNumber"].dropna().unique()
+        )
+    except fastf1.exceptions.DataNotLoadedError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Bahrain race timing is not available from the archive yet.",
+        ) from error
+    if not lap_numbers:
+        raise HTTPException(
+            status_code=503,
+            detail="Bahrain race timing has not been published yet.",
+        )
     return lap_numbers
     
 @app.get("/delta/{session_key}/{driver1}/{driver2}/{lap_number}")
@@ -171,6 +221,12 @@ async def get_session_drivers(session_key: int):
         session = await asyncio.to_thread(_load_session, session_key)
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+
+    if not session.drivers:
+        raise HTTPException(
+            status_code=503,
+            detail="Bahrain driver timing is not available from the archive yet.",
+        )
 
     grid = []
     for drv in session.drivers:

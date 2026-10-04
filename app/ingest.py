@@ -8,6 +8,7 @@ import pandas as pd
 TELEMETRY_DIR = Path(__file__).resolve().parent.parent / "data" / "telemetry"
 SESSION_CONFIG = {
     9472: (2024, 1, "R", 1229),
+    202616: (2026, 16, "R", 202616),
     202615: (2026, 15, "R", 202615),
 }
 
@@ -90,9 +91,9 @@ async def fetch_and_store_lap_telemetry(session_key: int, driver_number: int, la
     return race_path if has_lap else None
 
 async def main():
-    session_key = 202615
+    session_key = 202616
 
-    print("Loading the 2026 Azerbaijan Grand Prix race...")
+    print("Loading the 2026 Bahrain Grand Prix race...")
     session = await asyncio.to_thread(_load_session, session_key)
     drivers = session.drivers
     race_laps = sorted(session.laps["LapNumber"].dropna().astype(int).unique())

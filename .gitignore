@@ -21,6 +21,7 @@ frontend/next-env.d.ts
 
 # Generated telemetry data
 data/telemetry/*.parquet
+data/live/*.sqlite*
 
 # Editor and operating system files
 .DS_Store

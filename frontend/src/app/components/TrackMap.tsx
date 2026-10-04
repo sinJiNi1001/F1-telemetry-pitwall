@@ -147,7 +147,7 @@ export default function TrackMap({ drivers, sessionKey, lapNumber }: TrackMapPro
             width={900}
             height={620}
             className="h-full max-h-155 w-full object-contain"
-            aria-label={`Baku track replay, lap ${lapNumber}`}
+            aria-label={`Bahrain track replay, lap ${lapNumber}`}
           />
         )}
       </div>
