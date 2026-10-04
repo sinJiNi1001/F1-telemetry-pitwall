@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+httpx
+duckdb
+pyarrow
+pandas
+pydantic
+fastf1
